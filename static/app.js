@@ -11,10 +11,10 @@ const Controller = {
   },
 
   updateTable: (results) => {
-    const table = document.getElementById("table-body");
+    const table = document.getElementById("list");
     const rows = [];
     for (let result of results) {
-      rows.push(`<tr><td>${JSON.stringify(result)}</td></tr>`);
+      rows.push(`<li>${JSON.stringify(result)}</li>`);
     }
     table.innerHTML = rows.join("");
   },
