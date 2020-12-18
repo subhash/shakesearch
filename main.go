@@ -2,16 +2,16 @@ package main
 
 import (
 	"bytes"
-	"regexp"
 	"encoding/json"
 	"fmt"
-	"strings"
-	"sort"
 	"index/suffixarray"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"sort"
+	"strings"
+	"regexp"
 )
 
 func main() {
@@ -41,10 +41,9 @@ func main() {
 type Searcher struct {
 	CompleteWorks string
 	SuffixArray   *suffixarray.Index
-	ActIndex	  [][]int
-	SceneIndex	  [][]int
-	PlayIndex	  [][]int
-	SonnetIndex	  [][]int
+	LineBreaks	  [][]int
+	Documents	  [][2]int
+	DF			  map[string]int
 }
 
 func handleSearch(searcher Searcher) func(w http.ResponseWriter, r *http.Request) {
@@ -76,97 +75,64 @@ func (s *Searcher) Load(filename string) error {
 	}
 	s.CompleteWorks = string(dat)
 	s.SuffixArray = suffixarray.New(dat)
-	s.LoadIndices()
+	
+	lineBrkRegex := regexp.MustCompile("(\r\n){2,}")
+	s.LineBreaks = s.SuffixArray.FindAllIndex(lineBrkRegex, -1)
+	s.Documents = make([][2]int, 0) 
+	fmt.Println("Documents - ", len(s.LineBreaks))
+	docStart := 0
+	for _, lineBrk := range s.LineBreaks {
+		s.Documents = append(s.Documents, [2]int{docStart, lineBrk[0]})
+		docStart = lineBrk[1]
+	}
+	s.Documents = append(s.Documents, [2]int{docStart, len(s.CompleteWorks)-1})
+
+	terms := strings.Split(s.CompleteWorks, " ")
+	termMap := make(map[string]int)
+	for _, t := range terms {
+		t = strings.ReplaceAll(strings.ReplaceAll(t, "\r", " "), "\n", " ")
+		t = strings.ToLower(t)
+		termMap[t] += 1
+	}
+	fmt.Println("Terms - ", len(terms), len(termMap))
+	
+	s.DF = make(map[string]int)
+	for t, _ := range termMap {
+		termOccurences := s.SuffixArray.FindAllIndex(regexp.MustCompile(fmt.PrintS(" %s ", t)), -1)
+		if t == string('o') {
+			fmt.Println("occurrenced of o ", len(termOccurences))
+		}
+		tOccur := make([]int)
+		
+		sort.Ints(termOccurences)
+		ti := 0
+		for _, doc := range s.Documents {
+			docEnd := doc[1]
+			if ti >= len(termOccurences) {
+				break
+			}
+			if termOccurences[ti] <= docEnd {
+				s.DF[t] += 1
+			}
+			for ti < len(termOccurences) && termOccurences[ti] <= docEnd {
+				ti += 1
+			}
+		}
+
+
+	}
+
 	return nil
 }
 
-func (s *Searcher) LoadIndices() {
-	romanExp := "M{0,4}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})"
-	actExp := fmt.Sprintf(`ACT (%[1]s).*`, romanExp)
-	s.ActIndex = s.SuffixArray.FindAllIndex(regexp.MustCompile(actExp), -1)
-	sceneExp := fmt.Sprintf(`SCENE (%[1]s).*`, romanExp)
-	s.SceneIndex = s.SuffixArray.FindAllIndex(regexp.MustCompile(sceneExp), -1)
-	playExp := `.+(\r\n)+Contents`
-	s.PlayIndex = s.SuffixArray.FindAllIndex(regexp.MustCompile(playExp), -1)
-	sonnetExp := `\r\n\s+\d+\s+\r\n`
-	s.SonnetIndex = s.SuffixArray.FindAllIndex(regexp.MustCompile(sonnetExp), -1)
-}
-
-func (s *Searcher) LookupPlayIndices(idx int) (string, string, string) {
-	act, scene, play := "", "", ""
-	actIdx := sort.Search(len(s.ActIndex), func(i int) bool { return s.ActIndex[i][0] > idx})
-	if actIdx > 0 {
-		prev := s.ActIndex[actIdx-1]
-		act = s.CompleteWorks[prev[0]:prev[1]]
-		act = strings.ReplaceAll(act, "\r", "")
-	}
-	sceneIdx := sort.Search(len(s.SceneIndex), func(i int) bool { return s.SceneIndex[i][0] > idx})
-	if sceneIdx > 0 {
-		prev := s.SceneIndex[sceneIdx-1]
-		scene = s.CompleteWorks[prev[0]:prev[1]]
-		scene = strings.ReplaceAll(scene, "\r", "")
-	}
-	playIdx := sort.Search(len(s.PlayIndex), func(i int) bool { return s.PlayIndex[i][0] > idx})
-	if playIdx > 0 {
-		prev := s.PlayIndex[playIdx-1]
-		play = s.CompleteWorks[prev[0]:prev[1]]
-		play = strings.ReplaceAll(play, "\r\n", "")
-		play = strings.ReplaceAll(play, "Contents", "")
-	}
-	return act, scene, play
-}
-
-func (s *Searcher) LookupSonnetIndex(idx int) string {
-	sonnet := ""
-	sonnetIdx := sort.Search(len(s.SonnetIndex), func(i int) bool { return s.SonnetIndex[i][0] > idx})
-	if sonnetIdx > 0 {
-		prev := s.SonnetIndex[sonnetIdx-1]
-		sonnet = s.CompleteWorks[prev[0]:prev[1]]
-		sonnet = strings.ReplaceAll(sonnet, "\r\n", "")
-		sonnet = strings.ReplaceAll(sonnet, " ", "")
-	}
-	return sonnet
-}
-
-func (s *Searcher) Search(query string) []map[string]interface{} {
-	linesExp := `(?:.+\r\n)*`
-	regex := fmt.Sprintf(`(?i)(%[1]s.*%[2]s.*\r\n%[1]s)`, linesExp, query)
-	results := s.SearchRegex(regex)
-	if len(results) > 0 {
-		return results
-	} else {
-		bagWordsQuery := strings.Join(strings.Fields(query), ".*")
-		bagWordsRegex := fmt.Sprintf(`(?i)(%[1]s.*%[2]s.*\r\n%[1]s)`, linesExp, bagWordsQuery)
-		bagWordsResults := s.SearchRegex(bagWordsRegex)
-		return bagWordsResults
-	}
-}
-
-func (s *Searcher) SearchRegex(regex string) []map[string]interface{} {
-	re := regexp.MustCompile(regex)
-	idxs := s.SuffixArray.FindAllIndex(re, -1)
-	results := []map[string]interface{}{}
+func (s *Searcher) Search(query string) []string {
+	idxs := s.SuffixArray.Lookup([]byte(query), -1)
+	results := []string{}
 	for _, idx := range idxs {
-		itemStart, itemEnd := idx[0], idx[1]
-		match := s.CompleteWorks[itemStart:itemEnd]
-		snippet := strings.Split(match, "\r\n")
-		var item = map[string]interface{}{}
-		if itemStart < s.PlayIndex[0][0] {
-			if itemStart > s.SonnetIndex[0][0] {
-				sonnet := s.LookupSonnetIndex(itemStart)
-				item = map[string]interface{}{"snippet": snippet, 
-					"sonnet": sonnet}
-			} else {
-				item = map[string]interface{}{"snippet": snippet}
-			}
-		} else {
-			act, scene, play := s.LookupPlayIndices(itemStart)
-			item = map[string]interface{}{"snippet": snippet,
-				"play": play,
-				"act": act,
-				"scene": scene}
-		}
-		results = append(results, item)
+		results = append(results, s.CompleteWorks[idx-250:idx+250])
 	}
+	fmt.Println(results)
 	return results
 }
+
+
