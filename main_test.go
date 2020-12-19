@@ -8,7 +8,7 @@ import (
 
 func TestSearcher(t *testing.T) {
     searcher := Searcher{}
-    searcher.Load("hamlet.txt")
+    searcher.Load("sonnets.txt")
     // query := "Hamlet"
     // idxs := searcher.SuffixArray.Lookup([]byte(query), -1)
     FD := make(map[int][]string, len(searcher.DF))
@@ -17,13 +17,14 @@ func TestSearcher(t *testing.T) {
         FD[v] = append(FD[v], k)
         counts = append(counts, v)
     } 
-    fmt.Println("lc ", len(counts))
     sort.Sort(sort.Reverse(sort.IntSlice(counts)))
-    for i := 0; i < 50; i++ {
+    for i := 0; i < 100; i++ {
         idx := counts[i]
         fmt.Println("max =", idx, FD[idx])
     }
 
-    first := searcher.Documents[3]
-    fmt.Println("first ", searcher.CompleteWorks[first[0]:first[1]])
+    for i:=0; i<10; i++ {
+        doc := searcher.Documents[i]
+        fmt.Println("doc ", searcher.CompleteWorks[doc[0]:doc[1]])
+    }
 }

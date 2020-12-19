@@ -87,10 +87,13 @@ func (s *Searcher) Load(filename string) error {
 	}
 	s.Documents = append(s.Documents, [2]int{docStart, len(s.CompleteWorks)-1})
 
-	terms := strings.Split(s.CompleteWorks, " ")
+	//terms := strings.Split(s.CompleteWorks, " ")
+	terms := regexp.MustCompile(`[\r\n\s]+`).Split(s.CompleteWorks, -1)
 	termMap := make(map[string]int)
 	for _, t := range terms {
-		t = strings.ReplaceAll(strings.ReplaceAll(t, "\r", " "), "\n", " ")
+		// remove all except alphanumeric
+		alphaNumRegex := regexp.MustCompile("[^a-zA-Z0-9]+")
+		t = string(alphaNumRegex.ReplaceAll([]byte(t), []byte("")))
 		t = strings.ToLower(t)
 		if len(t) < 3 {
 			t = " "+t+" "
@@ -101,18 +104,23 @@ func (s *Searcher) Load(filename string) error {
 	
 	s.DF = make(map[string]int)
 	for t, _ := range termMap {
-		termOccurences := s.SuffixArray.Lookup([]byte(t), -1)
-		sort.Ints(termOccurences)
+		tRegex := regexp.MustCompile(fmt.Sprintf(`(?i)\W%s\W`, t))
+		tOccurs := s.SuffixArray.FindAllIndex(tRegex, -1)
+		tStarts := make([]int, 0)
+		for _, tOcc := range tOccurs {
+			tStarts = append(tStarts, tOcc[0])
+		}
+		sort.Ints(tStarts)
 		ti := 0
 		for _, doc := range s.Documents {
 			docEnd := doc[1]
-			if ti >= len(termOccurences) {
+			if ti >= len(tStarts) {
 				break
 			}
-			if termOccurences[ti] <= docEnd {
+			if tStarts[ti] <= docEnd {
 				s.DF[t] += 1
 			}
-			for ti < len(termOccurences) && termOccurences[ti] <= docEnd {
+			for ti < len(tStarts) && tStarts[ti] <= docEnd {
 				ti += 1
 			}
 		}
