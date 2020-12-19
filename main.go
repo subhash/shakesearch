@@ -92,18 +92,16 @@ func (s *Searcher) Load(filename string) error {
 	for _, t := range terms {
 		t = strings.ReplaceAll(strings.ReplaceAll(t, "\r", " "), "\n", " ")
 		t = strings.ToLower(t)
+		if len(t) < 3 {
+			t = " "+t+" "
+		}
 		termMap[t] += 1
 	}
 	fmt.Println("Terms - ", len(terms), len(termMap))
 	
 	s.DF = make(map[string]int)
 	for t, _ := range termMap {
-		termOccurences := s.SuffixArray.FindAllIndex(regexp.MustCompile(fmt.PrintS(" %s ", t)), -1)
-		if t == string('o') {
-			fmt.Println("occurrenced of o ", len(termOccurences))
-		}
-		tOccur := make([]int)
-		
+		termOccurences := s.SuffixArray.Lookup([]byte(t), -1)
 		sort.Ints(termOccurences)
 		ti := 0
 		for _, doc := range s.Documents {

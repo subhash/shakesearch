@@ -14,15 +14,14 @@ func TestSearcher(t *testing.T) {
     FD := make(map[int][]string, len(searcher.DF))
     counts := make([]int, 0)
     for k, v := range searcher.DF {
-        if v > 400 {
-            fmt.Println(k, v)
-        }
         FD[v] = append(FD[v], k)
         counts = append(counts, v)
     } 
+    fmt.Println("lc ", len(counts))
     sort.Sort(sort.Reverse(sort.IntSlice(counts)))
-    for i := 0; i < 10; i++ {
-        fmt.Println("max =", counts[i], FD[counts[i]], len(searcher.DF))
+    for i := 0; i < 50; i++ {
+        idx := counts[i]
+        fmt.Println("max =", idx, FD[idx])
     }
 
     first := searcher.Documents[3]
